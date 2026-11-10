@@ -1,0 +1,6 @@
+.env
+tokens.json
+activities_cache.json
+map.html
+.venv/
+__pycache__/

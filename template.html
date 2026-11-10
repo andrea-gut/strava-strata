@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trail Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --panel-2: #20242d; --border: #2a2f3a;
+    --text: #e6e8ee; --muted: #9aa3b2; --accent: #fc4c02;
+    --ride: #fb923c; --run: #38bdf8; --hike: #4ade80; --walk: #c084fc;
+    --ski: #e2e8f0; --water: #22d3ee; --other: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  #app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+  #side { background: var(--panel); border-right: 1px solid var(--border); padding: 18px 16px;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  #map { height: 100%; background: #000; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  h1 small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .section { display: flex; flex-direction: column; gap: 8px; }
+  .section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
+  .seg { display: flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .seg button { flex: 1; background: none; border: 0; color: var(--muted); padding: 7px 0; border-radius: 6px;
+    cursor: pointer; font: inherit; font-size: 13px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  label.type { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  label.type:hover { background: var(--panel-2); }
+  label.type input { accent-color: var(--accent); }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  label.type .n { flex: 1; }
+  label.type .c { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .range { display: flex; align-items: center; gap: 8px; }
+  .range select { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font: inherit; }
+  .range span { color: var(--muted); }
+  .slider { display: grid; grid-template-columns: 70px 1fr 36px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .slider input { width: 100%; accent-color: var(--accent); }
+  .slider output { text-align: right; font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: auto; }
+  .hint a { color: var(--text); }
+  .leaflet-container { font: inherit; }
+  .zoomctl a { width: auto !important; padding: 0 9px; font-size: 12px; font-weight: 600; line-height: 30px !important; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.78) contrast(1.0) saturate(.3); }
+  .leaflet-tooltip.rt { background: var(--panel); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+  .leaflet-tooltip.rt::before { display: none; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  .leaflet-popup-content { margin: 12px 14px; }
+  .leaflet-popup-content a { color: var(--accent); }
+  .leaflet-control-layers, .leaflet-bar a { background: var(--panel) !important; color: var(--text) !important; border-color: var(--border) !important; }
+  .leaflet-control-layers-expanded { color: var(--text); }
+  .leaflet-control-attribution { background: rgba(15,17,21,.75) !important; color: var(--muted) !important; }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+  #empty { position: absolute; inset: 0; display: none; place-items: center; z-index: 500; pointer-events: none;
+    color: var(--muted); font-size: 16px; }
+  @media (max-width: 760px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    #side { border-right: 0; border-bottom: 1px solid var(--border); max-height: 45vh; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>Trail Map <small id="subtitle"></small></h1>
+
+    <div class="stats">
+      <div class="stat"><b id="s-count">0</b><span>activities shown</span></div>
+      <div class="stat"><b id="s-dist">0</b><span>km total</span></div>
+    </div>
+
+    <div class="section">
+      <h2>View</h2>
+      <div class="seg" id="mode">
+        <button data-mode="routes" class="on">Routes</button>
+        <button data-mode="heat">Heatmap</button>
+        <button data-mode="both">Both</button>
+      </div>
+      <div class="slider" id="heat-ctl" style="display:none">
+        <span>Intensity</span>
+        <input type="range" id="heat-radius" min="3" max="20" value="7">
+        <output id="heat-radius-out">7</output>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Activity types</h2>
+      <div id="types"></div>
+    </div>
+
+    <div class="section">
+      <h2>Years</h2>
+      <div class="range">
+        <select id="y-from"></select><span>to</span><select id="y-to"></select>
+      </div>
+    </div>
+
+    <p class="hint">Hover a route for details, click it to open on Strava. Home / All zoom to your main area or every trip; the layers button switches base maps.</p>
+  </aside>
+  <div style="position:relative">
+    <div id="map"></div>
+    <div id="empty">No activities match these filters</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+<script>
+const ROUTES = /*__ROUTES__*/[];
+
+// ---- colors by activity type -------------------------------------------------
+const css = getComputedStyle(document.documentElement);
+const V = n => css.getPropertyValue(n).trim();
+function colorFor(type) {
+  const t = type.toLowerCase();
+  if (/ride|cycl|bike|velomobile|handcycle|ebike/.test(t)) return V('--ride');
+  if (/run|trail run/.test(t)) return V('--run');
+  if (/hike|backpack|climb|snowshoe/.test(t)) return V('--hike');
+  if (/walk/.test(t)) return V('--walk');
+  if (/ski|snowboard|ice skate/.test(t)) return V('--ski');
+  if (/kayak|canoe|row|surf|sail|paddle|swim|kitesurf|windsurf/.test(t)) return V('--water');
+  return V('--other');
+}
+
+// ---- map ----------------------------------------------------------------------
+const map = L.map('map', { preferCanvas: true, zoomControl: true, worldCopyJump: true });
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const ESRI_ATTR = 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS, OpenStreetMap contributors';
+const bases = {
+  'Dark': L.tileLayer(ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ESRI_ATTR, className: 'dark-tiles' }),
+  'Topo': L.tileLayer(ESRI + 'World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ESRI_ATTR }),
+  'Streets': L.tileLayer(ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: ESRI_ATTR }),
+  'Satellite': L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics, and the GIS User Community' }),
+};
+bases['Dark'].addTo(map);
+L.control.layers(bases, null, { position: 'topright' }).addTo(map);
+
+const routeLayer = L.layerGroup().addTo(map);
+let heatLayer = null;
+
+// ---- build the per-route polylines once ---------------------------------------
+const fmtTime = s => { if (!s) return ''; const h = Math.floor(s/3600), m = Math.round((s%3600)/60); return h ? `${h}h ${m}m` : `${m}m`; };
+for (const r of ROUTES) {
+  r.year = r.date ? +r.date.slice(0, 4) : null;
+  r.color = colorFor(r.type);
+  const line = L.polyline(r.coords, { color: r.color, weight: 2.5, opacity: 0.75, smoothFactor: 1.2 });
+  line.bindTooltip(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${r.dist_km} km${r.elev_m ? ` · ↑${r.elev_m} m` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}`,
+    { sticky: true, className: 'rt' });
+  line.bindPopup(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${r.dist_km} km${r.elev_m ? ` · ↑${r.elev_m} m` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}<br>` +
+    (/^\d+$/.test(r.id) ? `<a href="https://www.strava.com/activities/${r.id}" target="_blank" rel="noopener">Open on Strava ↗</a>` : ''));
+  line.on('mouseover', () => line.setStyle({ weight: 5, opacity: 1 }).bringToFront());
+  line.on('mouseout', () => line.setStyle({ weight: 2.5, opacity: 0.75 }));
+  r.line = line;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- sidebar controls ---------------------------------------------------------
+const typeCounts = {};
+for (const r of ROUTES) typeCounts[r.type] = (typeCounts[r.type] || 0) + 1;
+const typesEl = document.getElementById('types');
+const enabled = new Set(Object.keys(typeCounts));
+for (const [t, n] of Object.entries(typeCounts).sort((a, b) => b[1] - a[1])) {
+  const lab = document.createElement('label'); lab.className = 'type';
+  lab.innerHTML = `<input type="checkbox" checked><span class="sw" style="background:${colorFor(t)}"></span><span class="n">${esc(t)}</span><span class="c">${n}</span>`;
+  lab.querySelector('input').addEventListener('change', e => { e.target.checked ? enabled.add(t) : enabled.delete(t); refresh(); });
+  typesEl.appendChild(lab);
+}
+
+const years = [...new Set(ROUTES.map(r => r.year).filter(Boolean))].sort();
+const yFrom = document.getElementById('y-from'), yTo = document.getElementById('y-to');
+for (const y of years) { yFrom.add(new Option(y, y)); yTo.add(new Option(y, y)); }
+if (years.length) { yFrom.value = years[0]; yTo.value = years[years.length - 1]; }
+yFrom.onchange = yTo.onchange = refresh;
+
+let mode = 'routes';
+document.getElementById('mode').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  mode = b.dataset.mode;
+  document.querySelectorAll('#mode button').forEach(x => x.classList.toggle('on', x === b));
+  document.getElementById('heat-ctl').style.display = mode === 'routes' ? 'none' : '';
+  refresh();
+});
+const heatRadius = document.getElementById('heat-radius');
+heatRadius.oninput = () => { document.getElementById('heat-radius-out').textContent = heatRadius.value; if (heatLayer) heatLayer.setOptions({ radius: +heatRadius.value, blur: +heatRadius.value + 3 }); };
+
+// ---- heat points: densify each polyline so repeated routes stack up -----------
+function densify(coords, stepM = 25) {
+  const out = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [a, b] = [coords[i], coords[i + 1]];
+    const d = map.distance(a, b);
+    const n = Math.max(1, Math.round(d / stepM));
+    for (let k = 0; k < n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, 1]);
+  }
+  if (coords.length) out.push([...coords[coords.length - 1], 1]);
+  return out;
+}
+
+// ---- apply filters -------------------------------------------------------------
+let firstFit = true;
+function refresh() {
+  const y0 = +yFrom.value || -Infinity, y1 = +yTo.value || Infinity;
+  const shown = ROUTES.filter(r => enabled.has(r.type) && (!r.year || (r.year >= y0 && r.year <= y1)));
+
+  routeLayer.clearLayers();
+  if (mode !== 'heat') for (const r of shown) routeLayer.addLayer(r.line);
+
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  if (mode !== 'routes' && shown.length) {
+    const pts = shown.flatMap(r => densify(r.coords));
+    heatLayer = L.heatLayer(pts, { radius: +heatRadius.value, blur: +heatRadius.value + 3, maxZoom: 16, minOpacity: 0.35,
+      gradient: { 0.2: '#1d4ed8', 0.45: '#06b6d4', 0.65: '#facc15', 0.85: '#fb923c', 1: '#ffffff' } }).addTo(map);
+    if (mode === 'both') routeLayer.eachLayer(l => l.setStyle({ opacity: 0.25 }));
+  } else {
+    routeLayer.eachLayer(l => l.setStyle({ opacity: 0.75 }));
+  }
+
+  document.getElementById('s-count').textContent = shown.length.toLocaleString();
+  document.getElementById('s-dist').textContent = Math.round(shown.reduce((s, r) => s + r.dist_km, 0)).toLocaleString();
+  document.getElementById('empty').style.display = shown.length ? 'none' : 'grid';
+
+  lastShown = shown;
+  if (firstFit && shown.length) { fitHome(); firstFit = false; }
+}
+
+// ---- zoom helpers: "home" = the 1-degree cell with the most activities -----------
+let lastShown = [];
+function homeBounds(rs) {
+  const cells = {};
+  for (const r of rs) { const [la, lo] = r.coords[0]; const k = `${Math.round(la)},${Math.round(lo)}`; (cells[k] ||= []).push(r); }
+  let best = null;
+  for (const k in cells) if (!best || cells[k].length > cells[best].length) best = k;
+  const [cla, clo] = best.split(',').map(Number);
+  const near = rs.filter(r => Math.abs(r.coords[0][0] - cla) <= 1.5 && Math.abs(r.coords[0][1] - clo) <= 1.5);
+  return L.latLngBounds(near.flatMap(r => r.coords));
+}
+function fitHome() { if (lastShown.length) map.fitBounds(homeBounds(lastShown), { padding: [30, 30] }); }
+function fitAll()  { if (lastShown.length) map.fitBounds(L.latLngBounds(lastShown.flatMap(r => r.coords)), { padding: [30, 30] }); }
+const ZoomCtl = L.Control.extend({ onAdd() {
+  const div = L.DomUtil.create('div', 'leaflet-bar zoomctl');
+  div.innerHTML = '<a href="#" title="Zoom to home area">Home</a><a href="#" title="Zoom to every trip">All</a>';
+  const [h, a] = div.querySelectorAll('a');
+  L.DomEvent.on(h, 'click', e => { L.DomEvent.preventDefault(e); fitHome(); });
+  L.DomEvent.on(a, 'click', e => { L.DomEvent.preventDefault(e); fitAll(); });
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+} });
+new ZoomCtl({ position: 'topleft' }).addTo(map);
+
+const total = ROUTES.length, span = years.length ? (years[0] === years.at(-1) ? years[0] : `${years[0]}–${years.at(-1)}`) : '';
+document.getElementById('subtitle').textContent = total ? `${total.toLocaleString()} activities · ${span}` : 'No activities loaded';
+if (!total) map.setView([37.5, -119], 5);
+refresh();
+</script>
+</body>
+</html>
