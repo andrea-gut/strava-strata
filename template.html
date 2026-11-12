@@ -73,7 +73,7 @@
 
     <div class="stats">
       <div class="stat"><b id="s-count">0</b><span>activities shown</span></div>
-      <div class="stat"><b id="s-dist">0</b><span>km total</span></div>
+      <div class="stat"><b id="s-dist">0</b><span>miles total</span></div>
     </div>
 
     <div class="section">
@@ -147,14 +147,15 @@ const routeLayer = L.layerGroup().addTo(map);
 let heatLayer = null;
 
 // ---- build the per-route polylines once ---------------------------------------
+const mi = km => (km * 0.621371).toFixed(1), ft = m => Math.round(m * 3.28084).toLocaleString();
 const fmtTime = s => { if (!s) return ''; const h = Math.floor(s/3600), m = Math.round((s%3600)/60); return h ? `${h}h ${m}m` : `${m}m`; };
 for (const r of ROUTES) {
   r.year = r.date ? +r.date.slice(0, 4) : null;
   r.color = colorFor(r.type);
   const line = L.polyline(r.coords, { color: r.color, weight: 2.5, opacity: 0.75, smoothFactor: 1.2 });
-  line.bindTooltip(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${r.dist_km} km${r.elev_m ? ` · ↑${r.elev_m} m` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}`,
+  line.bindTooltip(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${mi(r.dist_km)} mi${r.elev_m ? ` · ↑${ft(r.elev_m)} ft` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}`,
     { sticky: true, className: 'rt' });
-  line.bindPopup(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${r.dist_km} km${r.elev_m ? ` · ↑${r.elev_m} m` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}<br>` +
+  line.bindPopup(`<b>${esc(r.name)}</b><br>${esc(r.type)} · ${r.date}<br>${mi(r.dist_km)} mi${r.elev_m ? ` · ↑${ft(r.elev_m)} ft` : ''}${r.time_s ? ` · ${fmtTime(r.time_s)}` : ''}<br>` +
     (/^\d+$/.test(r.id) ? `<a href="https://www.strava.com/activities/${r.id}" target="_blank" rel="noopener">Open on Strava ↗</a>` : ''));
   line.on('mouseover', () => line.setStyle({ weight: 5, opacity: 1 }).bringToFront());
   line.on('mouseout', () => line.setStyle({ weight: 2.5, opacity: 0.75 }));
@@ -224,7 +225,7 @@ function refresh() {
   }
 
   document.getElementById('s-count').textContent = shown.length.toLocaleString();
-  document.getElementById('s-dist').textContent = Math.round(shown.reduce((s, r) => s + r.dist_km, 0)).toLocaleString();
+  document.getElementById('s-dist').textContent = Math.round(shown.reduce((s, r) => s + r.dist_km, 0) * 0.621371).toLocaleString();
   document.getElementById('empty').style.display = shown.length ? 'none' : 'grid';
 
   lastShown = shown;
